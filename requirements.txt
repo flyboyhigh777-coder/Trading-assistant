@@ -1,0 +1,5 @@
+ccxt>=4.3.0
+pandas>=2.0
+numpy>=1.24
+python-telegram-bot[job-queue]>=21.0
+PyYAML>=6.0

@@ -1,0 +1,33 @@
+# Optional YAML config. Point at it with --config or POCKETTRADER_CONFIG.
+# Environment variables override anything set here.
+
+exchange: binance
+timeframe: 5m
+candles: 400
+
+watchlist:
+  - BTC/USDT
+  - ETH/USDT
+  - SOL/USDT
+  - XRP/USDT
+  - BNB/USDT
+
+# Omit to run all of them: ema_pullback, bb_reversion, macd_momentum, stoch_cross
+strategies:
+  - ema_pullback
+  - bb_reversion
+  - macd_momentum
+  - stoch_cross
+
+min_confidence: 0.55   # net weighted agreement needed before a signal is shown
+min_votes: 2           # how many strategies must agree
+expiry_bars: 3         # suggested expiry, in candles of the timeframe above
+
+# Volatility guard rails, as a share of price.
+max_atr_pct: 0.035
+min_atr_pct: 0.0005
+
+scan_interval_seconds: 300
+alert_cooldown_seconds: 1800
+rate_limit_per_minute: 20
+free_trial_days: 3
