@@ -189,7 +189,23 @@ python -m pytest
 
 Nothing in the suite touches an exchange or Telegram: market data is synthetic,
 the Crypto Pay client runs against a mock transport, and the webhook runs
-against an aiohttp test server.
+against an aiohttp test server. So it runs offline, with no tokens, in about a
+second.
+
+### Testing a payment without Crypto Pay
+
+`tools/fake_payment.py` sends the bot a correctly signed `invoice_paid`, which
+exercises the whole path — signature check, one-time settlement, the grant, the
+message to the user — without creating an app or opening a tunnel.
+
+```bash
+export CRYPTOBOT_TOKEN=...                                  # same token the bot runs with
+python tools/fake_payment.py --invoice 42 --chat 555 --plan week
+python tools/fake_payment.py --invoice 42 --chat 555 --plan week   # again: no double credit
+python tools/fake_payment.py --invoice 42 --chat 555 --unsigned    # expect 401
+```
+
+The invoice id comes from `/buy`, which stores it as pending.
 
 ## Roadmap
 
