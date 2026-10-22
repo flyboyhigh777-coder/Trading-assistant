@@ -5,8 +5,10 @@ services:
     env_file:
       - .env
     volumes:
+      # Здесь живут подписчики, заказы и каталог выпусков. Терять нельзя:
+      # вместе с файлом теряется и то, кто оплатил.
       - ./data:/app/data
     ports:
-      # Point your tunnel (local) or reverse proxy (production) at this port;
-      # the Crypto Pay webhook and /health are both served here.
+      # Сюда направляется туннель (локально) или обратный прокси (в проде):
+      # на этом порту и эндпоинты Payme/Click, и /health.
       - "8080:8080"

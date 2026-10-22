@@ -1,33 +1,28 @@
-# Optional YAML config. Point at it with --config or POCKETTRADER_CONFIG.
-# Environment variables override anything set here.
+# Необязательный YAML с настройками. Путь: --config или UZINVEST_CONFIG.
+# Переменные окружения перекрывают всё, что здесь написано.
 
-exchange: binance
-timeframe: 5m
-candles: 400
+catalog_path: bonds.yaml
+subscribers_path: data/subscribers.json
 
-watchlist:
-  - BTC/USDT
-  - ETH/USDT
-  - SOL/USDT
-  - XRP/USDT
-  - BNB/USDT
+# Сайт биржи. Официального API нет, поэтому это HTML-страницы;
+# парсер калибруется командой `python -m uzinvest fetch --tables`.
+stocks_url: https://www.uzse.uz/isu_infos/STK
+bonds_url: https://www.uzse.uz/isu_infos/BND
+quotes_cache_seconds: 900
+stale_after_days: 5        # сколько дней без сделок считать «бумага стоит»
 
-# Omit to run all of them: ema_pullback, bb_reversion, macd_momentum, stoch_cross
-strategies:
-  - ema_pullback
-  - bb_reversion
-  - macd_momentum
-  - stoch_cross
+# Ориентиры, с которыми бот сравнивает доходность выпуска.
+default_deposit_rate: 0.22
+default_inflation: 0.10
 
-min_confidence: 0.55   # net weighted agreement needed before a signal is shown
-min_votes: 2           # how many strategies must agree
-expiry_bars: 3         # suggested expiry, in candles of the timeframe above
+# Напоминания о купонах.
+reminder_hour_utc: 4       # 09:00 по Ташкенту
+coupon_reminder_days: 3
+alert_cooldown_seconds: 72000
 
-# Volatility guard rails, as a share of price.
-max_atr_pct: 0.035
-min_atr_pct: 0.0005
+rate_limit_per_minute: 20  # на пользователя, не на IP
+free_trial_days: 7
 
-scan_interval_seconds: 300
-alert_cooldown_seconds: 1800
-rate_limit_per_minute: 20
-free_trial_days: 3
+webhook_host: 0.0.0.0
+webhook_port: 8080
+webhook_path: /api/billing

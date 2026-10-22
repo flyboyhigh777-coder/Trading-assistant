@@ -1,6 +1,6 @@
 import pytest
 
-from pockettrader.ratelimit import RateLimiter
+from uzinvest.ratelimit import RateLimiter
 
 
 def test_allows_up_to_the_limit_then_blocks():

@@ -6,20 +6,21 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Dependencies first, so edits to the source do not re-resolve the wheel set.
+# Сначала зависимости: правка исходников не должна пересобирать колёса.
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY pockettrader ./pockettrader
+COPY uzinvest ./uzinvest
 
-# Subscribers and invoices live here; mount a volume so they survive a redeploy.
-RUN mkdir -p /app/data && useradd --create-home --uid 10001 pockettrader \
-    && chown -R pockettrader:pockettrader /app
-USER pockettrader
+# Каталог выпусков монтируется томом — его правят без пересборки образа.
+RUN mkdir -p /app/data && useradd --create-home --uid 10001 uzinvest \
+    && chown -R uzinvest:uzinvest /app
+USER uzinvest
 
-ENV POCKETTRADER_SUBSCRIBERS_PATH=/app/data/subscribers.json \
-    POCKETTRADER_WEBHOOK_HOST=0.0.0.0 \
-    POCKETTRADER_WEBHOOK_PORT=8080
+ENV UZINVEST_SUBSCRIBERS_PATH=/app/data/subscribers.json \
+    UZINVEST_CATALOG_PATH=/app/data/bonds.yaml \
+    UZINVEST_WEBHOOK_HOST=0.0.0.0 \
+    UZINVEST_WEBHOOK_PORT=8080
 
 EXPOSE 8080
 
@@ -27,5 +28,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request,sys; \
 sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=4).status == 200 else 1)"
 
-ENTRYPOINT ["python", "-m", "pockettrader"]
+ENTRYPOINT ["python", "-m", "uzinvest"]
 CMD ["bot"]

@@ -1,31 +1,24 @@
+from decimal import Decimal
+from pathlib import Path
+
 import pytest
 
-from pockettrader.config import TIMEFRAME_MINUTES, Settings
+from uzinvest.config import Settings
 
 
 def test_defaults_are_sane():
     settings = Settings()
-    assert settings.exchange == "binance"
-    assert settings.timeframe in TIMEFRAME_MINUTES
-    assert settings.expiry_minutes() == 15
     assert not settings.billing_enabled
-
-
-def test_watchlist_is_upper_cased_and_deduplicated():
-    assert Settings(watchlist=("btc/usdt", "BTC/USDT", "eth/usdt")).watchlist == (
-        "BTC/USDT",
-        "ETH/USDT",
-    )
+    assert settings.default_deposit_rate == Decimal("0.22")
+    assert settings.callback_urls() == {}
 
 
 @pytest.mark.parametrize(
     "kwargs,message",
     [
-        ({"timeframe": "7m"}, "unsupported timeframe"),
-        ({"min_confidence": 0.0}, "min_confidence"),
-        ({"min_confidence": 1.5}, "min_confidence"),
-        ({"min_votes": 0}, "min_votes"),
-        ({"candles": 50}, "candles"),
+        ({"reminder_hour_utc": 25}, "reminder_hour_utc"),
+        ({"coupon_reminder_days": -1}, "coupon_reminder_days"),
+        ({"rate_limit_per_minute": 0}, "rate_limit_per_minute"),
     ],
 )
 def test_invalid_settings_are_rejected(kwargs, message):
@@ -33,71 +26,93 @@ def test_invalid_settings_are_rejected(kwargs, message):
         Settings(**kwargs)
 
 
+def test_billing_turns_on_with_either_till():
+    assert Settings(payme_merchant_id="a", payme_merchant_key="b").billing_enabled
+    assert Settings(
+        click_service_id="1", click_merchant_id="2", click_secret_key="3"
+    ).billing_enabled
+    # Половина ключей — это не настроенная касса.
+    assert not Settings(payme_merchant_id="a").billing_enabled
+    assert not Settings(click_service_id="1", click_merchant_id="2").billing_enabled
+
+
+def test_callback_urls_are_spelled_out_for_both_tills():
+    settings = Settings(public_base_url="https://uzinvest.uz/", payme_merchant_id="a",
+                        payme_merchant_key="b")
+    urls = settings.callback_urls()
+    assert urls["payme"] == "https://uzinvest.uz/api/billing/payme"
+    assert urls["click_prepare"].endswith("/click/prepare")
+    assert urls["click_complete"].endswith("/click/complete")
+
+
 def test_env_overrides_are_coerced(monkeypatch):
-    monkeypatch.setenv("POCKETTRADER_WATCHLIST", "btc/usdt, sol/usdt")
-    monkeypatch.setenv("POCKETTRADER_MIN_CONFIDENCE", "0.8")
-    monkeypatch.setenv("POCKETTRADER_MIN_VOTES", "3")
-    monkeypatch.setenv("POCKETTRADER_ADMIN_CHAT_IDS", "1,2")
+    monkeypatch.setenv("UZINVEST_DEFAULT_INFLATION", "0.125")
+    monkeypatch.setenv("UZINVEST_ADMIN_CHAT_IDS", "1, 2")
+    monkeypatch.setenv("UZINVEST_FREE_TRIAL_DAYS", "14")
     settings = Settings.load()
-    assert settings.watchlist == ("BTC/USDT", "SOL/USDT")
-    assert settings.min_confidence == 0.8
-    assert settings.min_votes == 3
+    assert settings.default_inflation == Decimal("0.125")
     assert settings.admin_chat_ids == (1, 2)
+    assert settings.free_trial_days == 14
     assert settings.is_admin(2) and not settings.is_admin(3)
+
+
+def test_bare_env_names_are_honoured(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tg")
+    monkeypatch.setenv("PAYME_MERCHANT_ID", "m")
+    monkeypatch.setenv("PAYME_MERCHANT_KEY", "k")
+    monkeypatch.setenv("CLICK_SECRET_KEY", "s")
+    settings = Settings.load()
+    assert settings.telegram_token == "tg"
+    assert settings.payme_enabled
 
 
 @pytest.mark.parametrize(
     "raw,expected",
-    [("true", True), ("1", True), ("yes", True), ("false", False), ("0", False), ("off", False)],
+    [("true", True), ("1", True), ("да", True), ("false", False), ("off", False)],
 )
-def test_testnet_flag_parses_common_spellings(monkeypatch, raw, expected):
-    monkeypatch.setenv("POCKETTRADER_CRYPTOBOT_TESTNET", raw)
-    assert Settings.load().cryptobot_testnet is expected
+def test_test_mode_parses_common_spellings(monkeypatch, raw, expected):
+    monkeypatch.setenv("PAYME_TEST_MODE", raw)
+    assert Settings.load().payme_test_mode is expected
 
 
-def test_an_empty_env_value_does_not_count_as_false(monkeypatch):
-    # A blank line in an env file must not silently switch on live payments.
-    monkeypatch.setenv("POCKETTRADER_CRYPTOBOT_TESTNET", "")
-    monkeypatch.setenv("POCKETTRADER_EXCHANGE", "  ")
-    settings = Settings.load()
-    assert settings.cryptobot_testnet is True
-    assert settings.exchange == "binance"
+def test_an_empty_env_value_does_not_switch_to_live_payments(monkeypatch):
+    # Пустая строка в env-файле не должна выключить тестовый режим и
+    # отправить настоящие платежи.
+    monkeypatch.setenv("PAYME_TEST_MODE", "")
+    monkeypatch.setenv("UZINVEST_PAYME_TEST_MODE", "   ")
+    assert Settings.load().payme_test_mode is True
 
 
-def test_bare_env_names_are_honoured(monkeypatch):
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tg-token")
-    monkeypatch.setenv("CRYPTOBOT_TOKEN", "pay-token")
-    monkeypatch.setenv("PUBLIC_BASE_URL", "https://local.example.com/")
-    settings = Settings.load()
-    assert settings.telegram_token == "tg-token"
-    assert settings.billing_enabled
-    assert settings.webhook_url == "https://local.example.com/api/billing/webhook"
-
-
-def test_yaml_file_is_read_and_env_wins(tmp_path, monkeypatch):
+def test_yaml_is_read_and_env_wins(tmp_path, monkeypatch):
     config = tmp_path / "config.yaml"
-    config.write_text("exchange: bybit\ntimeframe: 15m\nmin_votes: 3\n")
-    monkeypatch.setenv("POCKETTRADER_TIMEFRAME", "1h")
+    config.write_text(
+        "default_inflation: 0.09\nfree_trial_days: 3\nwebhook_port: 9000\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("UZINVEST_FREE_TRIAL_DAYS", "30")
     settings = Settings.load(config)
-    assert settings.exchange == "bybit"
-    assert settings.timeframe == "1h"      # the env overrides the file
-    assert settings.min_votes == 3
+    assert settings.default_inflation == Decimal("0.09")
+    assert settings.free_trial_days == 30
+    assert settings.webhook_port == 9000
 
 
-def test_unknown_yaml_keys_are_kept_but_not_fatal(tmp_path):
+def test_unknown_yaml_keys_are_kept_aside(tmp_path):
     config = tmp_path / "config.yaml"
-    config.write_text("exchange: kraken\nsomething_new: 42\n")
-    settings = Settings.load(config)
-    assert settings.extra == {"something_new": 42}
-
-
-def test_allowed_chats_gate_access():
-    settings = Settings(allowed_chat_ids=(10,))
-    assert settings.is_chat_allowed(10)
-    assert not settings.is_chat_allowed(11)
-    assert Settings().is_chat_allowed(99)   # empty list means everyone
+    config.write_text("что_то_новое: 42\n", encoding="utf-8")
+    assert Settings.load(config).extra == {"что_то_новое": 42}
 
 
 def test_webhook_path_is_normalised():
-    assert Settings(webhook_path="api/billing").webhook_path == "/api/billing"
-    assert Settings(public_base_url="https://x.io").webhook_url.startswith("https://x.io/")
+    assert Settings(webhook_path="api/billing/").webhook_path == "/api/billing"
+
+
+def test_allowed_chats_gate_access():
+    assert Settings(allowed_chat_ids=(10,)).is_chat_allowed(10)
+    assert not Settings(allowed_chat_ids=(10,)).is_chat_allowed(11)
+    assert Settings().is_chat_allowed(99)
+
+
+def test_paths_become_path_objects():
+    settings = Settings(catalog_path="a/b.yaml", subscribers_path="c/d.json")
+    assert isinstance(settings.catalog_path, Path)
+    assert isinstance(settings.subscribers_path, Path)

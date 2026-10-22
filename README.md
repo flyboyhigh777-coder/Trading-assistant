@@ -1,214 +1,216 @@
-# PocketTrader — signal assistant
+# uzinvest — помощник по облигациям узбекского рынка
 
-A Telegram bot that watches crypto pairs, runs four indicator strategies over
-each closed candle, and tells you when they agree on a direction. Access is sold
-through Crypto Pay (@CryptoBot), in crypto, inside Telegram.
+Telegram-бот, который считает настоящую доходность облигаций Республиканской
+фондовой биржи «Тошкент», ведёт портфель, напоминает о купонах и продаёт доступ
+через Payme и Click.
 
-It produces **opinions, not orders**: nothing here connects to a broker and
-nothing places a trade.
+Это **калькулятор и справочник, а не брокер**: бот ничего не покупает и не
+продаёт и ни к какой торговой системе не подключается.
 
-> **Read this before you use it.** Signals are indicator output, not advice.
-> Short-expiry binary options pay out less than they cost in expectation at
-> every broker's published payout — a 50/50 outcome paying 80% loses money over
-> time, so a strategy has to be genuinely better than a coin flip just to break
-> even. Treat the output as one input among several, and never size a position
-> you cannot afford to lose. Binary options are restricted or banned for retail
-> clients in the EU, UK and several other jurisdictions; check your own rules.
+## Зачем это нужно
 
-## What it does
+В приложении брокера на карточке выпуска написано «26%». При ежемесячном купоне
+и реинвестировании это **29,33% годовых** — на миллионе сумов за три года
+разница **383 376 сум**. Этого числа в приложении нет, а руками его никто не
+считает. Бот считает.
 
-- **Four strategies vote on every bar.** `ema_pullback` (trend continuation),
-  `bb_reversion` (fade a stretched move), `macd_momentum` (impulse with the
-  trend) and `stoch_cross` (reversal out of an extreme).
-- **The engine blends the votes.** Confidence is the net *weighted* agreement:
-  agreeing strength minus opposing strength over the whole panel. One strategy
-  shouting into three silent ones scores low, by design.
-- **Volatility gates.** A bar whose ATR is above the ceiling or below the floor
-  is thrown out before a direction is ever reported.
-- **Closed candles only.** The in-progress candle is dropped, so a signal does
-  not flicker within its own period.
-- **Push alerts.** Opt in and the bot scans your watchlist on a timer, messaging
-  you when something clears your personal threshold. Repeats are suppressed for
-  a cooldown.
-- **Billing.** Crypto Pay invoices, a signed webhook that credits access the
-  moment payment clears, and a polling fallback for when the webhook is lost.
+| тикер | купон | в месяц | эффективная | за срок |
+| --- | --- | --- | --- | --- |
+| DMMT2B3 | 28% | 27 271 | **31,89%** | 876 243 |
+| HMMT3B | 26% | 21 667 | **29,33%** | 1 163 376 |
+| BFMT3B6 | 24% | 1 973 | **26,83%** | 103 989 |
 
-## Quick start
+Плюс то, чего тоже нигде нет: НКД на любую дату, календарь выплат по портфелю,
+сравнение с вкладом на равных основаниях (обе ставки приводятся к эффективным)
+и реальная доходность по Фишеру, а не вычитанием инфляции.
+
+## Почему не индикаторы
+
+Первая версия считала сигналы по EMA, MACD и RSI. На этом рынке они
+бессмысленны: у акций УзРФБ изменение 0,00% неделями, а индикаторам нужно
+120–280 баров подряд. Поэтому по акциям бот показывает не сигнал, а **давность
+сделки** — на неликвидном рынке сам факт сделки информативнее цены. Облигационная
+математика, наоборот, точна и истории цен не требует, поэтому работает всегда.
+
+## Быстрый старт
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env            # fill in TELEGRAM_BOT_TOKEN
+cp .env.example .env            # впишите TELEGRAM_BOT_TOKEN
+cp bonds.example.yaml bonds.yaml
 set -a; . ./.env; set +a
 
-python -m pockettrader scan                 # one-off scan of the watchlist
-python -m pockettrader signal BTC/USDT      # one pair, with every vote shown
-python -m pockettrader config               # the resolved configuration
-python -m pockettrader bot                  # run the Telegram bot
+python -m uzinvest bonds                      # все выпуски по эффективной ставке
+python -m uzinvest bond HMMT3B --price 950000 # разбор выпуска и YTM по цене
+python -m uzinvest calendar DMMT2B3 -n 2      # календарь выплат
+python -m uzinvest config                     # итоговые настройки и адреса касс
+python -m uzinvest bot                        # запустить бота
 ```
 
-With `CRYPTOBOT_TOKEN` empty, billing is off and every chat has full access —
-convenient locally, wrong in production.
+Пока ключи касс пусты, оплата выключена и доступ открыт всем — удобно локально
+и недопустимо в продакшене.
 
-## Telegram commands
+## Каталог выпусков
 
-| Command | What it does |
+Параметры выпуска (номинал, ставка, частота, даты) биржа машиночитаемо не
+отдаёт, поэтому они лежат в `bonds.yaml` — и все расчёты работают, даже когда
+сайт биржи недоступен. Частота задаётся **одним** из двух полей, ровно как на
+карточке:
+
+```yaml
+per_year: 12       # когда написано «Месячный»
+period_days: 30    # когда написано «30 дней»
+```
+
+Это не синонимы: 365/30 = 12,17 периода в году. На 24% разница в эффективной
+ставке — почти полпроцента.
+
+> ⚠️ В `bonds.example.yaml` **даты выпуска и погашения — заглушки**: на карточках
+> виден только срок, но не дата начала. Проставьте реальные из проспекта
+> эмиссии, иначе весь календарь купонов будет смещён.
+
+## Команды бота
+
+| Команда | Что делает |
 | --- | --- |
-| `/signal BTC/USDT [5m]` | Analyse one pair now, with each strategy's reasoning |
-| `/scan [5m]` | Run the whole watchlist |
-| `/watch`, `/watch add BTC/USDT`, `/watch remove BTC/USDT`, `/watch reset` | Manage your watchlist (max 25) |
-| `/alerts on\|off` | Push new setups as they appear |
-| `/settings tf 15m`, `/settings minconf 0.65` | Your timeframe and confidence floor |
-| `/status` | Access, settings, watchlist |
-| `/plans`, `/buy` | Purchase access through Crypto Pay |
-| `/grant <chat_id> <days>` | Admin only, listed in `POCKETTRADER_ADMIN_CHAT_IDS` |
+| `/bonds` | Все выпуски, отсортированы по эффективной ставке |
+| `/bond HMMT3B 5` | Карточка выпуска на 5 бумаг: эффективная ставка, НКД, ближайшая выплата |
+| `/add UZ6058537AA0 3` | Добавить бумагу в портфель |
+| `/remove ISIN`, `/clear` | Убрать бумагу, очистить портфель |
+| `/portfolio` | Что лежит, сколько приносит в месяц, разбивка по месяцам |
+| `/calendar` | Ближайшие выплаты по всему портфелю |
+| `/quotes` | Акции и когда по каждой последний раз была сделка |
+| `/settings вклад 24` | С какой ставкой сравнивать |
+| `/settings инфляция 11` | Для реальной доходности |
+| `/alerts вкл` | Напоминать за N дней до купона |
+| `/plans`, `/buy` | Оплата доступа через Payme или Click |
+| `/grant <chat_id> <дней>` | Только для админов из `UZINVEST_ADMIN_CHAT_IDS` |
 
-Direction is in option terms: **CALL** expects price up at expiry, **PUT** down.
-Suggested expiry is `expiry_bars` candles of the timeframe you are on.
+## Оплата
 
-## Billing setup
+Payme и Click устроены не как обычные вебхуки: **они вызывают нас** и ждут
+ответа в своём формате. Неверный ответ Payme трактует как отказ и деньги не
+проводит, поэтому реализованы все шесть методов JSON-RPC, а не один обработчик.
 
-Crypto Pay runs two separate networks, and an app belongs to exactly one of
-them. Create one app per environment and keep the tokens apart.
+```
+POST /api/billing/payme           CheckPerformTransaction → CreateTransaction
+                                  → PerformTransaction / CancelTransaction
+POST /api/billing/click/prepare   SHOP-API, action=0
+POST /api/billing/click/complete  SHOP-API, action=1
+GET  /health
+```
 
-**Local (testnet)**
+Что сделано для безопасности денег:
 
-1. Open [@CryptoTestnetBot](https://t.me/CryptoTestnetBot) → `/start`.
-2. Crypto Pay → **Create App**, copy the API token into `CRYPTOBOT_TOKEN`.
-3. Set `CRYPTOBOT_TESTNET=true`.
-4. Expose the webhook port publicly — Crypto Pay only delivers to public HTTPS:
-   ```bash
-   cloudflared tunnel --url http://localhost:8080     # or ngrok http 8080
-   ```
-   Put the resulting origin in `PUBLIC_BASE_URL`.
-5. In the app's settings: **Webhooks** → enable → paste
-   `<PUBLIC_BASE_URL>/api/billing/webhook`.
-   `python -m pockettrader config` prints the exact URL to paste.
-6. Fund a test wallet from the same bot and buy a plan to check the flow.
+- **Payme** — Basic-авторизация ключом кассы, суммы в **тийинах**, машина
+  состояний транзакции, отказ провести транзакцию старше 12 часов, возврат
+  забирает доступ обратно.
+- **Click** — проверка md5-подписи, суммы в **сумах** (перепутать с Payme —
+  ошибиться в сто раз), допуск в один сум на округления Click.
+- **Обе** — заказ оплачивается ровно один раз: повторный вызов не начислит
+  доступ дважды. Сравнение подписей идёт по байтам и за постоянное время.
 
-**Production (mainnet)**
+Настройка: `python -m uzinvest config` печатает готовые адреса для кабинетов.
+Локально нужен туннель, иначе кассам некуда стучаться:
 
-The same steps in [@CryptoBot](https://t.me/CryptoBot), with
-`CRYPTOBOT_TESTNET=false`, the real domain in `PUBLIC_BASE_URL`, and its own
-token in `.env.prod`. A testnet token on mainnet (or the reverse) fails at
-startup with a clear log line — `getMe` is called on boot for exactly that
-reason.
+```bash
+cloudflared tunnel --url http://localhost:8080     # или ngrok http 8080
+```
 
-**How a payment lands**
+Полученный origin — в `PUBLIC_BASE_URL`. Мерчант-договор на юрлицо или ИП с ИНН
+в Узбекистане заводится отдельно и занимает недели.
 
-1. `/buy` creates an invoice and stores it as pending.
-2. The user pays; Crypto Pay POSTs to `/api/billing/webhook`.
-3. The signature is checked — `HMAC-SHA256(body, SHA256(token))` — and anything
-   unsigned or forged is refused with a 401.
-4. The invoice is settled **once**: a replayed delivery cannot double-credit.
-5. Access is extended and the user is messaged.
+### Проверить оплату, не заводя кассу
 
-If the webhook never arrives (tunnel down, delivery lost), a poll every
-`invoice_poll_seconds` checks pending invoices and settles them the same way,
-through the same once-only path.
+```bash
+export PAYME_MERCHANT_KEY=...
+python tools/fake_payme.py --order UZ1A2B3C4D5E --amount 49000
+python tools/fake_payme.py --order UZ1A2B3C4D5E --amount 49000 --bad-key   # ждём −32504
 
-## Deployment
+export CLICK_SECRET_KEY=...
+python tools/fake_click.py --order UZ5965FB2BC8 --amount 15000
+python tools/fake_click.py --order UZ5965FB2BC8 --amount 15000 --bad-sign  # ждём −1
+```
+
+Номер счёта берётся из `/buy`. Повторный запуск с тем же номером ничего не
+начислит — это и есть проверка идемпотентности.
+
+## Данные с биржи
+
+Официального API у биржи нет, поэтому котировки берутся разбором страницы.
+Парсер ищет колонки **по тексту заголовка**, а не по CSS-селекторам, поэтому
+переверстку обычно переживает. Перед продакшеном его нужно откалибровать:
+
+```bash
+python -m uzinvest fetch --tables     # какие таблицы и колонки видны
+python -m uzinvest fetch --raw        # сырой HTML
+```
+
+Если биржа переименует колонку — допишите слово в `COLUMN_HINTS`
+(`uzinvest/market/uzse.py`), остальной код трогать не нужно. Перед регулярным
+использованием сверьтесь с условиями использования сайта.
+
+## Развёртывание
 
 ```bash
 docker compose up -d --build
 curl localhost:8080/health
 ```
 
-`data/` holds `subscribers.json` — subscribers, settings and invoices. It is
-mounted as a volume; back it up, because losing it means losing who has paid.
+В `data/` лежат подписчики, заказы и каталог. Делайте бэкап: вместе с файлом
+теряется и то, кто оплатил.
 
-## Configuration
-
-Every setting can come from a YAML file (`--config`, see
-`config.example.yaml`) or from the environment, where `POCKETTRADER_*` wins over
-the file. `TELEGRAM_BOT_TOKEN`, `CRYPTOBOT_TOKEN`, `CRYPTOBOT_TESTNET` and
-`PUBLIC_BASE_URL` are also read under their bare names. An empty value counts as
-unset, so a blank line in an env file cannot quietly flip you to mainnet.
-
-| Setting | Default | Meaning |
-| --- | --- | --- |
-| `exchange` | `binance` | Any ccxt spot exchange id |
-| `timeframe` | `5m` | `1m` … `1d` |
-| `min_confidence` | `0.55` | Net weighted agreement needed |
-| `min_votes` | `2` | Strategies that must agree |
-| `expiry_bars` | `3` | Suggested expiry, in candles |
-| `max_atr_pct` / `min_atr_pct` | `0.035` / `0.0005` | Volatility gates |
-| `scan_interval_seconds` | `300` | Alert scan cadence |
-| `alert_cooldown_seconds` | `1800` | Repeat suppression per signal |
-| `rate_limit_per_minute` | `20` | Commands per **user**, not per IP |
-| `free_trial_days` | `3` | Granted on first `/start` |
-
-Rate limiting is keyed on the Telegram user id on purpose: users behind one
-carrier NAT share an address, so an IP bucket punishes bystanders for one
-person's spam.
-
-## Adding a strategy
-
-Subclass `Strategy`, return a `Vote` for the last closed bar, register it:
-
-```python
-# pockettrader/strategies/my_idea.py
-class MyIdea(Strategy):
-    name = "my_idea"
-    min_bars = 120
-    weight = 1.0
-
-    def _vote(self, df):
-        if some_condition(df):
-            return self.vote(Direction.CALL, 0.7, "why it fired")
-        return self.abstain("no setup")
-```
-
-Add it to `REGISTRY` in `pockettrader/strategies/__init__.py` and it becomes
-selectable by name in `strategies:`. Strategies are pure functions of the frame
-— no network, no state — which is what keeps them testable.
-
-## Layout
-
-```
-pockettrader/
-  indicators.py   EMA/RSI/MACD/Bollinger/ATR/Stochastic/ADX on plain pandas
-  strategies/     one file per strategy, plus the registry
-  engine.py       runs the panel, blends votes, applies the gates
-  data.py         ccxt OHLCV with a TTL cache; drops the open candle
-  models.py       Direction, Vote, Signal
-  bot.py          Telegram handlers, the scan job, the invoice poll
-  billing.py      Crypto Pay client and webhook signature check
-  webhook.py      aiohttp endpoint + /health
-  storage.py      JSON store: subscribers, settings, invoices
-  ratelimit.py    per-user sliding window
-  formatting.py   Telegram HTML and CLI rendering
-  cli.py          scan / signal / bot / config
-```
-
-## Tests
+## Тесты
 
 ```bash
 pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Nothing in the suite touches an exchange or Telegram: market data is synthetic,
-the Crypto Pay client runs against a mock transport, and the webhook runs
-against an aiohttp test server. So it runs offline, with no tokens, in about a
-second.
+**217 тестов, около секунды, без сети и без ключей.** Страница биржи — фикстура
+в тесте, Payme и Click работают против настоящего aiohttp-сервера, деньги
+считаются в `Decimal`.
 
-### Testing a payment without Crypto Pay
+| Модуль | Тестов | О чём |
+| --- | --- | --- |
+| `test_bonds.py` | 44 | купоны, НКД, YTM, эффективная ставка, календарь |
+| `test_webhook.py` | 36 | оба протокола оплаты целиком, включая отказы и повторы |
+| `test_formatting.py` | 27 | вывод, экранирование, склонение дней |
+| `test_market.py` | 27 | разбор страницы, каталог, давность сделки |
+| `test_bot.py` | 22 | напоминания, доступ, разбор ввода |
+| `test_storage.py` | 20 | переживание рестарта, разовое начисление |
+| `test_config.py` | 19 | env/YAML, приоритеты |
+| `test_money.py` | 15 | форматы сумм, тийины, округление |
+| `test_ratelimit.py` | 7 | окно лимита на пользователя |
 
-`tools/fake_payment.py` sends the bot a correctly signed `invoice_paid`, which
-exercises the whole path — signature check, one-time settlement, the grant, the
-message to the user — without creating an app or opening a tunnel.
+Лимит запросов привязан к пользователю Telegram, а не к IP: за одним адресом
+сидит целый оператор мобильной связи, и IP-ведро наказывало бы посторонних.
 
-```bash
-export CRYPTOBOT_TOKEN=...                                  # same token the bot runs with
-python tools/fake_payment.py --invoice 42 --chat 555 --plan week
-python tools/fake_payment.py --invoice 42 --chat 555 --plan week   # again: no double credit
-python tools/fake_payment.py --invoice 42 --chat 555 --unsigned    # expect 401
+## Структура
+
+```
+uzinvest/
+  money.py        суммы в Decimal, тийины, местные форматы
+  bonds/          модель выпуска, календарь купонов, доходность
+  market/         каталог выпусков, разбор страницы биржи
+  billing/        Payme (JSON-RPC) и Click (SHOP-API)
+  webhook.py      эндпоинты, которые вызывают кассы
+  storage.py      JSON: подписчики, портфели, заказы
+  bot.py          команды, напоминания о купонах
+  formatting.py   вывод для Telegram и консоли
+  cli.py          bonds / bond / calendar / quotes / fetch / config / bot
+tools/            проверка оплаты без заведения кассы
 ```
 
-The invoice id comes from `/buy`, which stores it as pending.
+## Что дальше
 
-## Roadmap
+- Даты выпусков из проспектов вместо заглушек в каталоге
+- Калибровка парсера по живой странице биржи
+- Доходность с учётом налога на купонный доход
+- Автозаполнение каталога из раздела облигаций биржи
 
-- Forex/OTC data adapter behind the existing `DataProvider` protocol
-- Backtest harness to measure win rate per strategy at a given payout
-- Per-strategy weights tuned from that backtest rather than set by hand
+## Оговорки
+
+Расчёт справочный. Параметры выпуска сверяйте с проспектом эмиссии: ошибка в
+дате или ставке меняет весь результат. Ставка по вкладу и инфляция в настройках
+— ваши предположения, а не рыночные данные; обновляйте их.

@@ -1,5 +1,5 @@
-ccxt>=4.3.0
-pandas>=2.0
-numpy>=1.24
+# Расчётный слой держится на стандартной библиотеке (Decimal, datetime,
+# html.parser): ни pandas, ни numpy, ни парсеров HTML здесь не нужно.
 python-telegram-bot[job-queue]>=21.0
+aiohttp>=3.9
 PyYAML>=6.0

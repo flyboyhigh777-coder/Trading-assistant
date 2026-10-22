@@ -13,4 +13,5 @@ config.yaml
 .cache/
 data/cache/
 subscribers.json
+bonds.yaml
 .ruff_cache/
